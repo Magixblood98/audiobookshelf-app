@@ -13,6 +13,7 @@
           </div>
           <span class="material-symbols text-2xl px-2" @click="showSortModal = true">sort</span>
         </template>
+        <span v-if="seriesBookPage && isBookLibrary" class="material-symbols text-2xl px-2" @click="openSeriesMissing">library_add</span>
         <span v-if="seriesBookPage" class="material-symbols text-2xl px-2" @click="downloadSeries">download</span>
         <span v-if="(page == 'library' && isBookLibrary) || seriesBookPage" class="material-symbols text-2xl px-2" @click="showMoreMenuDialog = true">more_vert</span>
       </div>
@@ -145,6 +146,9 @@ export default {
     async changeView() {
       this.bookshelfListView = !this.bookshelfListView
       await this.$hapticsImpact()
+    },
+    openSeriesMissing() {
+      this.$router.push(`/series-missing/${this.$route.params.id}`)
     },
     downloadSeries() {
       console.log('Download Series click')
