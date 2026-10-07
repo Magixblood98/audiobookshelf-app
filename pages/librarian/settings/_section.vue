@@ -1,5 +1,5 @@
 <template>
-  <librarian-page :title="section ? section.title : 'Settings'" tab="settings" :gate="id !== 'connection'" @retry="load">
+  <librarian-page :title="section ? section.title : 'Settings'" tab="settings" :gate="!['connection', 'server'].includes(id)" @retry="load">
     <!-- Connection lives in the app, so it works even when the server is down -->
     <template v-if="id === 'connection'">
       <p class="text-sm text-fg-muted px-5 pt-4">Where this app finds Pocket Librarian. On this phone it’s http://127.0.0.1:5300. Pocket Librarian on your Pi works too, through its Tailscale address.</p>
@@ -16,6 +16,50 @@
         </div>
         <p class="text-xs text-fg-muted mt-4 leading-relaxed">Start works when Pocket Librarian is on this phone. The first time, Android asks to let this app run commands in Termux. Termux also needs <code>allow-external-apps = true</code> in ~/.termux/termux.properties.</p>
       </div>
+    </template>
+
+    <!-- Server & battery: works while the server is off so it can be started -->
+    <template v-else-if="id === 'server'">
+      <div class="mx-4 mt-4 p-4 rounded-2xl bg-bg-hover/40">
+        <div class="flex items-center gap-3">
+          <span class="w-3 h-3 rounded-full flex-none" :style="{ background: serverOn ? '#4CAF50' : 'rgb(var(--color-fg-muted))' }" />
+          <div class="flex-grow min-w-0">
+            <p class="lib-serif text-lg font-semibold">{{ starting ? 'Starting…' : serverOn ? 'Pocket Librarian is on' : 'Pocket Librarian is off' }}</p>
+            <p class="text-sm text-fg-muted">{{ powerText }}</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2 mt-4">
+          <button v-if="serverOn" type="button" class="lib-btn" :disabled="busy" @click="stopServer"><span class="material-symbols">power_settings_new</span>Turn off now</button>
+          <button v-else type="button" class="lib-btn primary" :disabled="busy || starting || !$librarian.isLocal" @click="startServer"><span class="material-symbols">play_arrow</span>Start</button>
+          <button type="button" class="lib-btn quiet" @click="refreshPower">Refresh</button>
+        </div>
+      </div>
+
+      <label class="flex items-center gap-4 px-5 pt-5 pb-2">
+        <span class="flex-grow">
+          <span class="block">Start it when I open Librarian</span>
+          <span class="block text-xs text-fg-muted mt-1 leading-snug">Also when you request books from a series or use Find in Librarian.</span>
+        </span>
+        <input v-model="autoStart" type="checkbox" class="lib-switch" @change="saveAutoStart" />
+      </label>
+
+      <template v-if="cfg">
+        <div class="px-5 pt-4">
+          <label class="block text-sm text-fg-muted mb-1.5">Turn off when there’s nothing to do</label>
+          <select v-model.number="powerForm.idle_minutes" class="lib-input">
+            <option v-for="o in IDLE_OPTIONS" :key="'i' + o[0]" :value="o[0]">{{ o[1] }}</option>
+          </select>
+          <p class="text-xs text-fg-muted mt-1.5 leading-snug">It never turns off in the middle of a download or a search. While it’s on, it only keeps your phone awake when it’s working.</p>
+        </div>
+        <div class="px-5 pt-4">
+          <label class="block text-sm text-fg-muted mb-1.5">Wake up to search for wanted books</label>
+          <select v-model.number="powerForm.wake_hours" class="lib-input" :disabled="!cfgPower.wake_scheduler">
+            <option v-for="o in WAKE_OPTIONS" :key="'w' + o[0]" :value="o[0]">{{ o[1] }}</option>
+          </select>
+          <p class="text-xs text-fg-muted mt-1.5 leading-snug">{{ cfgPower.wake_scheduler === false ? 'Needs the Termux:API app (pkg install termux-api).' : 'Android starts it on schedule, skipping times when your battery is low. It runs the searches and checks that are due, then turns off again.' }}</p>
+        </div>
+      </template>
+      <p v-else-if="!serverOn" class="text-sm text-fg-muted px-5 pt-4">Start it to change when it turns off and wakes up.</p>
     </template>
 
     <p v-else-if="!cfg" class="py-8 text-center text-fg-muted">Loading…</p>
@@ -158,7 +202,7 @@
 <script>
 import { Clipboard } from '@capacitor/clipboard'
 import { Dialog } from '@capacitor/dialog'
-import { CHANNELS, CLIENT_FIELDS, SECTIONS } from '@/utils/librarianSettings'
+import { CHANNELS, CLIENT_FIELDS, IDLE_OPTIONS, SECTIONS, WAKE_OPTIONS } from '@/utils/librarianSettings'
 
 export default {
   data() {
@@ -171,6 +215,10 @@ export default {
       importKind: 'audio',
       importStatus: 'wanted',
       showKey: false,
+      autoStart: this.$store.state.librarian.config.autoStart !== false,
+      powerForm: { idle_minutes: 15, wake_hours: 6 },
+      IDLE_OPTIONS,
+      WAKE_OPTIONS,
       CHANNELS,
       PROV_TYPES: { prowlarr: 'Prowlarr', torznab: 'Torznab feed', newznab: 'Newznab feed' },
       PROV_USE: { both: 'Ebooks and audiobooks', ebook: 'Ebooks only', audio: 'Audiobooks only' },
@@ -205,7 +253,29 @@ export default {
     section() {
       return SECTIONS.find((s) => s.id === this.id)
     },
+    serverOn() {
+      return this.$store.state.librarian.online === true
+    },
+    starting() {
+      return this.$store.state.librarian.starting
+    },
+    cfgPower() {
+      return this.$store.state.librarian.status?.power || {}
+    },
+    powerText() {
+      if (this.starting) return 'Starting in Termux…'
+      if (!this.serverOn) return this.autoStart ? 'It starts by itself when you open Librarian.' : 'Start it here or in Termux with pl start.'
+      const p = this.cfgPower
+      if (!p.busy) return ''
+      const parts = []
+      if (p.busy.length) parts.push('Busy: ' + p.busy.join('; ') + '. It stays on until that’s done.')
+      else if (p.stops_in != null) parts.push(`Turns itself off in about ${Math.max(1, Math.round(p.stops_in / 60))} min if nothing happens.`)
+      else parts.push('Stays on until you turn it off.')
+      parts.push(p.wake_lock ? 'Keeping the phone awake while it works.' : 'Not keeping the phone awake.')
+      return parts.join(' ')
+    },
     hasSave() {
+      if (this.id === 'server') return !!this.cfg
       return this.cfg && ['downloads', 'notifications', 'security'].includes(this.id) ? true : !!(this.cfg && this.section && this.section.fields)
     },
     absAddress() {
@@ -241,6 +311,17 @@ export default {
   methods: {
     async load() {
       if (this.id === 'connection') return
+      if (this.id === 'server') {
+        try {
+          // A plain status check counts as activity here, which is fine: you're looking at the server
+          await this.$librarian.loadStatus()
+          this.cfg = await this.$librarian.get('/api/config')
+          this.powerForm = { idle_minutes: +this.cfg.server.idle_minutes || 0, wake_hours: +this.cfg.server.wake_hours || 0 }
+        } catch {
+          this.cfg = null
+        }
+        return
+      }
       if (!this.section) return this.$router.replace('/librarian/settings')
       try {
         this.cfg = await this.$librarian.get('/api/config')
@@ -277,6 +358,7 @@ export default {
         CHANNELS.forEach(([id]) => (p[id] = this.getRef('ch-' + id).patch()))
         return { notifications: p }
       }
+      if (this.id === 'server') return { server: { ...this.powerForm } }
       if (this.id === 'security') {
         const v = this.getRef('security').patch()
         return { server: { port: v.server.port || 5300, host: v._lan ? '0.0.0.0' : '127.0.0.1', allowed_hosts: v.server.allowed_hosts, password: v.server.password }, opds: { enabled: v.opds.enabled } }
@@ -393,13 +475,34 @@ export default {
         this.busy = false
       }
     },
+    async refreshPower() {
+      await this.$librarian.ping()
+      this.load()
+    },
+    async stopServer() {
+      this.busy = true
+      try {
+        await this.$librarian.stopServer()
+        this.cfg = null
+        this.$toast.success('Pocket Librarian is off')
+      } catch (error) {
+        this.$toast.error(error.message)
+      } finally {
+        this.busy = false
+      }
+    },
+    async saveAutoStart() {
+      await this.$librarian.saveConfig({ ...this.$store.state.librarian.config, autoStart: this.autoStart })
+    },
     async startServer() {
       this.busy = true
       try {
         await this.$librarian.startServer()
         this.connResult = { ok: true, text: 'Pocket Librarian is running.' }
+        if (this.id === 'server') this.load()
       } catch (error) {
         this.connResult = { ok: false, text: error.message }
+        if (this.id === 'server') this.$toast.error(error.message)
       } finally {
         this.busy = false
       }

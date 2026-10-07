@@ -83,14 +83,15 @@ export function pathLabel(p) {
 class Librarian {
   constructor({ store }) {
     this.store = store
-    this.config = { url: DEFAULT_URL, apiKey: '' }
+    this.config = { url: DEFAULT_URL, apiKey: '', autoStart: true }
+    this.starting = null
     this.loaded = this.loadConfig()
   }
 
   async loadConfig() {
     try {
       const obj = (await Preferences.get({ key: CONFIG_KEY })) || {}
-      if (obj.value) this.config = { url: DEFAULT_URL, apiKey: '', ...JSON.parse(obj.value) }
+      if (obj.value) this.config = { url: DEFAULT_URL, apiKey: '', autoStart: true, ...JSON.parse(obj.value) }
     } catch (error) {
       console.error('[Librarian] Failed to load config', error)
     }
@@ -99,7 +100,7 @@ class Librarian {
   }
 
   async saveConfig(config) {
-    this.config = { url: (config.url || DEFAULT_URL).trim().replace(/\/+$/, ''), apiKey: (config.apiKey || '').trim() }
+    this.config = { url: (config.url || DEFAULT_URL).trim().replace(/\/+$/, ''), apiKey: (config.apiKey || '').trim(), autoStart: config.autoStart !== false }
     await Preferences.set({ key: CONFIG_KEY, value: JSON.stringify(this.config) })
     this.store.commit('librarian/setConfig', { ...this.config })
     return this.config
@@ -134,10 +135,12 @@ class Librarian {
     return this.resolve(b?.cover || b?.cover_url || '')
   }
 
-  async api(path, { method = 'GET', body, timeout = 120000 } = {}) {
+  /** passive: a background check that shouldn't keep the server from turning itself off */
+  async api(path, { method = 'GET', body, timeout = 120000, passive = false } = {}) {
     await this.loaded
     const headers = {}
     if (this.config.apiKey) headers['X-Api-Key'] = this.config.apiKey
+    if (passive) headers['X-PL-Passive'] = '1'
     let data
     if (method !== 'GET') {
       headers['Content-Type'] = 'application/json'
@@ -191,17 +194,17 @@ class Librarian {
     return this.api(path, { method: 'DELETE' })
   }
 
-  async ping() {
+  async ping({ passive = false } = {}) {
     try {
-      const p = await this.api('/api/ping')
+      const p = await this.api('/api/ping', { passive })
       return { online: true, auth: p.auth, authed: p.authed, version: p.version }
     } catch (error) {
       return { online: false, error }
     }
   }
 
-  async loadStatus() {
-    const status = await this.api('/api/status')
+  async loadStatus({ passive = false } = {}) {
+    const status = await this.api('/api/status', { passive })
     this.store.commit('librarian/setStatus', status)
     return status
   }
@@ -248,8 +251,44 @@ class Librarian {
     await Browser.open({ url: this.resolve(path) })
   }
 
+  /** Make sure the server is up, starting it in Termux when it's on this phone and auto-start is on */
+  async ensureRunning() {
+    const p = await this.ping()
+    if (p.online) return true
+    if (!this.isLocal || this.config.autoStart === false) return false
+    try {
+      await this.startServer()
+      return true
+    } catch (error) {
+      console.warn('[Librarian] Auto-start failed', error)
+      return false
+    }
+  }
+
+  /** Turn the server off now (it also turns itself off after a while with nothing to do) */
+  async stopServer() {
+    await this.post('/api/server/stop')
+    this.store.commit('librarian/setStatus', null)
+    setTimeout(() => this.store.commit('librarian/setOnline', false), 800)
+  }
+
+  startServer() {
+    // One start at a time, however many screens ask
+    if (!this.starting) this.starting = this.doStartServer().finally(() => (this.starting = null))
+    return this.starting
+  }
+
   /** Ask Termux to run `pl start`. Needs Termux with allow-external-apps=true and the RUN_COMMAND permission. */
-  async startServer() {
+  async doStartServer() {
+    this.store.commit('librarian/setStarting', true)
+    try {
+      return await this.runStart()
+    } finally {
+      this.store.commit('librarian/setStarting', false)
+    }
+  }
+
+  async runStart() {
     if (!this.isLocal) throw new LibrarianError('Pocket Librarian runs on another device. Start it there.')
     const { installed } = await TermuxRunner.isInstalled()
     if (!installed) throw new LibrarianError('Termux isn’t installed on this phone.')

@@ -19,9 +19,9 @@ export default {
   methods: {
     check() {
       if (document.hidden) return
-      // Librarian pages poll on their own; elsewhere check quietly every 30 seconds
+      // Librarian pages poll on their own; elsewhere check quietly (passive, so the server can still turn itself off)
       if (this.$route.path.startsWith('/librarian')) return
-      this.$librarian.loadStatus().catch(() => {})
+      this.$librarian.loadStatus({ passive: true }).catch(() => {})
     }
   },
   mounted() {

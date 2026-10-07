@@ -308,8 +308,10 @@ export default {
       }
     },
     async findInLibrarian() {
+      const author = this.mediaMetadata.authorName || this.mediaMetadata.authors?.[0]?.name
       try {
-        await this.$librarian.findBook(this.title, this.mediaMetadata.authorName || this.mediaMetadata.authors?.[0]?.name)
+        if (!(await this.$librarian.ensureRunning())) throw Object.assign(new Error('offline'), { offline: true })
+        await this.$librarian.findBook(this.title, author)
       } catch (error) {
         if (error.offline) {
           this.$toast.error('Librarian isn’t running. Open Librarian from the menu to start it.')

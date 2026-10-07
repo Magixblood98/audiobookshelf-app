@@ -257,6 +257,9 @@ export default {
         }
 
         this.loadingText = 'Checking Librarian...'
+        // Starts Pocket Librarian if it's off (and auto-start is on), so requests go through it
+        if (this.$librarian.isLocal && this.$store.state.librarian.config.autoStart !== false && !(await this.$librarian.ping()).online) this.loadingText = 'Starting Librarian...'
+        await this.$librarian.ensureRunning()
         const ping = await this.$librarian.ping()
         this.librarianOnline = ping.online && !(ping.auth && !ping.authed)
         let librarianBooks = null

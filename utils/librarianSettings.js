@@ -56,7 +56,32 @@ export const CHANNELS = [
   ['webhook', 'Webhook', [['url', 'Address', 'url', 'Gets a JSON POST with a title and a message.']]]
 ]
 
+export const IDLE_OPTIONS = [
+  [5, 'After 5 minutes'],
+  [15, 'After 15 minutes'],
+  [30, 'After 30 minutes'],
+  [60, 'After an hour'],
+  [0, 'Never (uses more battery)']
+]
+
+export const WAKE_OPTIONS = [
+  [0, 'Never, only when I open Librarian'],
+  [3, 'Every 3 hours'],
+  [6, 'Every 6 hours'],
+  [12, 'Every 12 hours'],
+  [24, 'Once a day']
+]
+
 export const SECTIONS = [
+  {
+    id: 'server',
+    title: 'Server & battery',
+    sum: (c) => {
+      const idle = +c.server.idle_minutes
+      const wake = +c.server.wake_hours
+      return `${idle ? `Turns off after ${idle} min idle` : 'Always on'}, ${wake ? `wakes every ${wake} h` : 'no scheduled wake-ups'}`
+    }
+  },
   { id: 'connection', title: 'Connection', sum: (c, app) => `${app.url}${app.apiKey ? ', with API key' : ''}` },
   {
     id: 'indexers',

@@ -2,6 +2,7 @@ export const state = () => ({
   config: { url: 'http://127.0.0.1:5300', apiKey: '' },
   online: null,
   needsKey: false,
+  starting: false,
   status: null
 })
 
@@ -18,6 +19,9 @@ export const mutations = {
   },
   setNeedsKey(state, needsKey) {
     state.needsKey = needsKey
+  },
+  setStarting(state, starting) {
+    state.starting = starting
   },
   setStatus(state, status) {
     state.status = status
