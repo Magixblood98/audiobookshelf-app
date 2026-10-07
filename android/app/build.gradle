@@ -48,8 +48,25 @@ android {
       ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
   }
+  // ABS Series builds are signed with one permanent key (from the fork's GitHub secrets, see build-apk.yml)
+  // so each new APK installs over the last one. Without it, the default debug key is used.
+  def absSeriesKeystore = System.getenv("ABS_SERIES_KEYSTORE")
+  if (absSeriesKeystore) {
+    signingConfigs {
+      absSeries {
+        storeFile file(absSeriesKeystore)
+        storeType "pkcs12"
+        storePassword System.getenv("ABS_SERIES_KEYSTORE_PASSWORD")
+        keyAlias "abs-series"
+        keyPassword System.getenv("ABS_SERIES_KEYSTORE_PASSWORD")
+      }
+    }
+  }
   buildTypes {
     debug {
+      if (absSeriesKeystore) {
+        signingConfig signingConfigs.absSeries
+      }
       applicationIdSuffix ".debug"
       versionNameSuffix "-debug"
       minifyEnabled false
