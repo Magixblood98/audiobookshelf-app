@@ -89,6 +89,11 @@ export default {
           to: '/bookshelf'
         }
       ]
+      items.push({
+        icon: 'local_library',
+        text: 'Librarian',
+        to: '/librarian'
+      })
       if (!this.serverConnectionConfig) {
         items = [
           {

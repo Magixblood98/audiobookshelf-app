@@ -1,5 +1,12 @@
 # Audiobookshelf Mobile App
 
+> **This fork (ABS Series)** adds two things on top of the official app. Debug builds install next to the official app as "ABS Series".
+>
+> - **Complete series**: on any series, the new button in the top bar lists every book in the series (from Audible's catalog), shows how many you're missing and whether each is requested, and requests the rest.
+> - **Librarian**: the whole Pocket Librarian interface (Library, Wanted, Discover, Activity, Settings) inside the app, under Librarian in the side menu. Pocket Librarian's server still does the background work (scheduled searches, Real-Debrid, renaming, Audiobookshelf scans); the app talks to its API at `http://127.0.0.1:5300` and can start it in Termux.
+>
+> Code: `pages/librarian/`, `components/librarian/`, `plugins/librarian.js`, `pages/series-missing/`, `utils/seriesRequests.js`, and the `TermuxRunner` Capacitor plugin.
+
 Audiobookshelf is a self-hosted audiobook and podcast server.
 
 ### Android (beta)

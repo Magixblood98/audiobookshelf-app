@@ -9,10 +9,14 @@
       </div>
       <p v-if="authorName" class="text-sm text-fg-muted pl-8">{{ authorName }}</p>
 
-      <!-- Prowlarr not set up -->
-      <div v-if="!loadingConfig && !prowlarrConfigured" class="mt-4 p-3 rounded-md border border-warning bg-warning bg-opacity-10 text-sm">
-        Connect your Prowlarr server to request books and see what's already requested.
-        <ui-btn small color="primary" class="mt-2 block" @click="openSettings">Set up Prowlarr</ui-btn>
+      <!-- Where requests go -->
+      <p v-if="librarianOnline" class="mt-3 text-xs text-fg-muted flex items-center"><span class="material-symbols text-base mr-1 lib-text-want">local_library</span>Requests go to Librarian, which downloads them for you.</p>
+      <div v-else-if="!loadingConfig && !canRequest" class="mt-4 p-3 rounded-md border border-warning bg-warning bg-opacity-10 text-sm">
+        Start Librarian (Pocket Librarian) to request books, or connect Prowlarr directly.
+        <div class="flex gap-2 mt-2">
+          <ui-btn small color="primary" @click="$router.push('/librarian')">Open Librarian</ui-btn>
+          <ui-btn small color="bg" @click="openSettings">Set up Prowlarr</ui-btn>
+        </div>
       </div>
       <p v-if="historyError" class="mt-3 text-xs text-error">Couldn't read Prowlarr history: {{ historyError }}</p>
 
@@ -51,7 +55,7 @@
           <template v-if="counts.upcoming"> · {{ counts.upcoming }} upcoming</template>
         </p>
 
-        <ui-btn v-if="counts.missing && prowlarrConfigured" color="success" class="w-full mt-4 flex items-center justify-center" :loading="requestingAll" @click="requestAllMissing">
+        <ui-btn v-if="counts.missing && canRequest" color="success" class="w-full mt-4 flex items-center justify-center" :loading="requestingAll" @click="requestAllMissing">
           <span class="material-symbols text-xl pr-2">playlist_add</span>
           Request rest of series ({{ counts.missing }})
         </ui-btn>
@@ -71,12 +75,13 @@
                 {{ statusText(book) }}
               </p>
             </div>
-            <ui-btn v-if="book.status === 'missing' && prowlarrConfigured" small color="primary" class="flex-shrink-0" :loading="requestingAsin === book.asin" @click="openReleasePicker(book)">Request</ui-btn>
-            <span v-else-if="book.status === 'requested' && prowlarrConfigured" class="material-symbols text-xl text-fg-muted px-2" @click="openReleasePicker(book)">refresh</span>
-            <span v-else-if="book.status === 'owned'" class="material-symbols text-xl text-success px-2 fill">check_circle</span>
+            <ui-btn v-if="book.status === 'missing' && canRequest" small color="primary" class="flex-shrink-0" :loading="requestingAsin === book.asin" @click="requestOne(book)">Request</ui-btn>
+            <span v-else-if="book.status === 'requested' && book.librarianBookId" class="material-symbols text-xl text-fg-muted px-2" @click="openBook(book)">chevron_right</span>
+            <span v-else-if="book.status === 'requested' && prowlarrConfigured && !librarianOnline" class="material-symbols text-xl text-fg-muted px-2" @click="openReleasePicker(book)">refresh</span>
+            <span v-else-if="book.status === 'owned'" class="material-symbols text-xl text-success px-2 fill" @click="openBook(book)">check_circle</span>
           </div>
         </div>
-        <p class="text-xxs text-fg-muted mt-4 text-center">Series list from Audible ({{ config.audibleRegion.toUpperCase() }}). "Requested" = grabbed in Prowlarr or requested from this app.</p>
+        <p class="text-xxs text-fg-muted mt-4 text-center">Series list from Audible ({{ config.audibleRegion.toUpperCase() }}). "Requested" = wanted or downloading in Librarian, grabbed in Prowlarr, or requested from this app.</p>
       </template>
     </div>
 
@@ -134,7 +139,7 @@
 
 <script>
 import { Dialog } from '@capacitor/dialog'
-import { AUDIBLE_REGIONS, getConfig, saveConfig, isProwlarrConfigured, testProwlarr, findAudibleSeriesAsin, getAudibleSeriesBooks, buildSeriesStatus, searchProwlarr, grabRelease } from '@/utils/seriesRequests'
+import { AUDIBLE_REGIONS, getConfig, saveConfig, isProwlarrConfigured, testProwlarr, findAudibleSeriesAsin, getAudibleSeriesBooks, buildSeriesStatus, searchProwlarr, grabRelease, getLibrarianBooks, requestViaLibrarian } from '@/utils/seriesRequests'
 
 export default {
   async asyncData({ params, app, store, redirect, route }) {
@@ -154,6 +159,7 @@ export default {
     return {
       config: { prowlarrUrl: '', prowlarrApiKey: '', audibleRegion: 'us' },
       loadingConfig: true,
+      librarianOnline: false,
       loading: false,
       loadingText: '',
       errorText: '',
@@ -175,6 +181,9 @@ export default {
     prowlarrConfigured() {
       return isProwlarrConfigured(this.config)
     },
+    canRequest() {
+      return this.librarianOnline || this.prowlarrConfigured
+    },
     audibleRegions() {
       return Object.keys(AUDIBLE_REGIONS)
     },
@@ -189,8 +198,11 @@ export default {
   },
   methods: {
     statusText(book) {
-      if (book.status === 'owned') return 'In your library'
+      if (book.status === 'owned') return book.libraryItemId || book.requestedInfo?.source !== 'Librarian' ? 'In your library' : 'Downloaded by Librarian, Audiobookshelf will pick it up'
       if (book.status === 'upcoming') return `Coming ${new Date(book.releaseDate).toLocaleDateString()}`
+      if (book.status === 'requested' && book.requestedInfo?.source === 'Librarian') {
+        return { wanted: 'Wanted in Librarian, searching', snatched: 'Downloading (Librarian)' }[book.requestedInfo.state]
+      }
       if (book.status === 'requested') {
         const date = book.requestedInfo?.date ? new Date(book.requestedInfo.date).toLocaleDateString() : ''
         return `Requested${date ? ' ' + date : ''} (${book.requestedInfo?.source})`
@@ -244,8 +256,18 @@ export default {
           return
         }
 
-        this.loadingText = 'Checking Prowlarr...'
-        const result = await buildSeriesStatus(this.config, seriesBooks, this.ownedBooks, this.authorName)
+        this.loadingText = 'Checking Librarian...'
+        const ping = await this.$librarian.ping()
+        this.librarianOnline = ping.online && !(ping.auth && !ping.authed)
+        let librarianBooks = null
+        if (this.librarianOnline) {
+          librarianBooks = await getLibrarianBooks(this.$librarian, this.authorName || seriesBooks[0].authorName).catch((error) => {
+            console.error('[SeriesMissing] Failed to read Librarian books', error)
+            return null
+          })
+        }
+        if (this.prowlarrConfigured) this.loadingText = 'Checking Prowlarr...'
+        const result = await buildSeriesStatus(this.config, seriesBooks, this.ownedBooks, this.authorName, { librarianBooks })
         this.books = result.books
         this.counts = result.counts
         this.historyError = result.historyError
@@ -258,6 +280,38 @@ export default {
     },
     openBook(book) {
       if (book.libraryItemId) this.$router.push(`/item/${book.libraryItemId}`)
+      else if (book.librarianBookId && this.librarianOnline) this.$librarian.openBook(book.librarianBookId)
+    },
+    requestOne(book) {
+      if (this.librarianOnline) return this.requestLibrarian(book)
+      this.openReleasePicker(book)
+    },
+    async requestLibrarian(book, quiet = false) {
+      this.requestingAsin = book.asin
+      try {
+        const id = await requestViaLibrarian(this.$librarian, book, this.authorName, this.series.name)
+        this.markRequestedLibrarian(book, id)
+        if (!quiet) this.$toast.success(`Wanted ${book.title}. Librarian is searching for it.`)
+        this.$librarian.changed({ bookId: id })
+        return true
+      } catch (error) {
+        if (quiet) throw error
+        this.$toast.error(`Request failed: ${error.message || error}`)
+        return false
+      } finally {
+        this.requestingAsin = null
+      }
+    },
+    markRequestedLibrarian(book, id) {
+      const target = this.books.find((b) => b.asin === book.asin)
+      if (!target) return
+      if (target.status === 'missing') {
+        this.counts.missing--
+        this.counts.requested++
+      }
+      target.status = 'requested'
+      target.librarianBookId = id
+      target.requestedInfo = { source: 'Librarian', state: 'wanted', bookId: id }
     },
     async openReleasePicker(book) {
       this.picker = { book, loading: true, error: '', releases: [], showAll: false }
@@ -306,7 +360,7 @@ export default {
       if (!missing.length) return
       const { value } = await Dialog.confirm({
         title: 'Request rest of series',
-        message: `Search Prowlarr and request the best release for ${missing.length} missing book${missing.length > 1 ? 's' : ''}?\n\n${missing.map((b) => `${b.sequence ? '#' + b.sequence + ' ' : ''}${b.title}`).join('\n')}`
+        message: `${this.librarianOnline ? 'Want these in Librarian, which searches and downloads them' : 'Search Prowlarr and request the best release'} for ${missing.length} missing book${missing.length > 1 ? 's' : ''}?\n\n${missing.map((b) => `${b.sequence ? '#' + b.sequence + ' ' : ''}${b.title}`).join('\n')}`
       })
       if (!value) return
 
@@ -314,6 +368,15 @@ export default {
       const failed = []
       let requested = 0
       for (const book of missing) {
+        if (this.librarianOnline) {
+          try {
+            await this.requestLibrarian(book, true)
+            requested++
+          } catch (error) {
+            failed.push(`${book.title} (${error.message || error})`)
+          }
+          continue
+        }
         this.requestingAsin = book.asin
         try {
           const releases = await searchProwlarr(this.config, book, this.authorName || book.authorName)
@@ -336,7 +399,7 @@ export default {
       if (failed.length) {
         await Dialog.alert({
           title: `${failed.length} not requested`,
-          message: `${failed.join('\n')}\n\nTap Request on a book to pick a release yourself.`
+          message: `${failed.join('\n')}\n\nTap Request on a book to try again.`
         })
       }
     },

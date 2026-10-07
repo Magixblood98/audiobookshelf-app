@@ -375,7 +375,7 @@ export async function grabRelease(config, release, book) {
  * Compare a full series against the books in the library.
  * @returns {Promise<{books: object[], counts: {total:number, owned:number, missing:number, requested:number, upcoming:number}, historyError: string|null}>}
  */
-export async function buildSeriesStatus(config, seriesBooks, ownedBooks, authorName) {
+export async function buildSeriesStatus(config, seriesBooks, ownedBooks, authorName, { librarianBooks = null } = {}) {
   let history = []
   let historyError = null
   if (isProwlarrConfigured(config)) {
@@ -402,6 +402,17 @@ export async function buildSeriesStatus(config, seriesBooks, ownedBooks, authorN
     } else if (isUpcoming(book)) {
       status = 'upcoming'
     } else {
+      const lib = librarianBooks && findLibrarianBook(librarianBooks, allTitles)
+      if (lib && lib.audio_status === 'have') {
+        // Downloaded by Librarian; Audiobookshelf just hasn't scanned it in yet
+        status = 'owned'
+        requestedInfo = { source: 'Librarian', state: 'have', bookId: lib.id }
+      } else if (lib && ['wanted', 'snatched'].includes(lib.audio_status)) {
+        status = 'requested'
+        requestedInfo = { source: 'Librarian', state: lib.audio_status, bookId: lib.id }
+      }
+    }
+    if (status === 'missing') {
       const grab = history.find((h) => h.titles.some((t) => allTitles.some((title) => releaseMatchesBook(t, { title }, authorName))))
       if (grab) {
         status = 'requested'
@@ -411,7 +422,8 @@ export async function buildSeriesStatus(config, seriesBooks, ownedBooks, authorN
         requestedInfo = { source: 'This app', date: localRequests[book.asin].date, title: localRequests[book.asin].releaseTitle }
       }
     }
-    return { ...book, status, requestedInfo, libraryItemId: ownedMatch?.id || null }
+    const librarianBook = librarianBooks && findLibrarianBook(librarianBooks, allTitles)
+    return { ...book, status, requestedInfo, libraryItemId: ownedMatch?.id || null, librarianBookId: librarianBook?.id || null }
   })
 
   const counts = { total: 0, owned: 0, missing: 0, requested: 0, upcoming: 0 }
@@ -420,4 +432,49 @@ export async function buildSeriesStatus(config, seriesBooks, ownedBooks, authorN
     if (b.status !== 'upcoming') counts.total++
   })
   return { books, counts, historyError }
+}
+
+/* ---------------- Pocket Librarian ---------------- */
+
+const AUDIO_RANK = { have: 4, snatched: 3, wanted: 2, skipped: 1, ignored: 0 }
+
+/** Librarian can hold several records for one book (editions); use the one furthest along */
+function findLibrarianBook(librarianBooks, titles) {
+  const matches = librarianBooks.filter((b) => titles.some((t) => titlesMatch(b.title, t) || (b.subtitle && titlesMatch(`${b.title} ${b.subtitle}`, t))))
+  return matches.sort((a, b) => (AUDIO_RANK[b.audio_status] || 0) - (AUDIO_RANK[a.audio_status] || 0))[0]
+}
+
+/** Every book Pocket Librarian tracks for this author (its search matches title, author and series) */
+export async function getLibrarianBooks(librarian, authorName) {
+  const surname = authorSurname(authorName)
+  if (!surname) return []
+  const d = await librarian.get(`/api/books?status=all&q=${encodeURIComponent(surname)}&limit=500`)
+  return (d.books || []).filter((b) => !b.author_name || normalizeTitle(b.author_name).split(' ').includes(surname))
+}
+
+/**
+ * Want the audiobook in Pocket Librarian, which searches for it and downloads it (through Real-Debrid
+ * on this setup). Open Library metadata is used when it can be found so folders and series are named well.
+ */
+export async function requestViaLibrarian(librarian, book, authorName, seriesName) {
+  const firstAuthor = (authorName || book.authorName || '').split(/,|&| and /)[0].trim()
+  let olBook = null
+  try {
+    const d = await librarian.get('/api/lookup/books?q=' + encodeURIComponent(`${cleanTitle(book.title)} ${firstAuthor}`))
+    const surname = authorSurname(firstAuthor)
+    olBook = (d.results || []).find((r) => titlesMatch(r.title, book.title) && (!surname || normalizeTitle(r.author_name).split(' ').includes(surname)))
+  } catch (error) {
+    console.warn('[SeriesRequests] Open Library lookup through Librarian failed', error)
+  }
+  if (olBook?.book_id) {
+    // Never move a book that's already wanted, downloading or in the library back to wanted
+    const existing = await librarian.get(`/api/books/${olBook.book_id}`)
+    if (['skipped', 'ignored'].includes(existing.audio_status)) await librarian.patch(`/api/books/${olBook.book_id}`, { audio_status: 'wanted' })
+    return olBook.book_id
+  }
+  const payload = olBook
+    ? { ...olBook, series: olBook.series || seriesName, series_num: olBook.series_num || book.sequence }
+    : { title: cleanTitle(book.title), author_name: firstAuthor, series: seriesName, series_num: book.sequence, year: book.releaseDate ? Number(book.releaseDate.slice(0, 4)) : null, cover_url: book.cover || '' }
+  const r = await librarian.post('/api/books', { book: payload, want: ['audio'] })
+  return r.id
 }

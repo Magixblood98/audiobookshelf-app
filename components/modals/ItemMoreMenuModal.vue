@@ -135,6 +135,14 @@ export default {
         }
       }
 
+      if (!this.isPodcast && this.title) {
+        items.push({
+          text: 'Find in Librarian',
+          value: 'librarian',
+          icon: 'local_library'
+        })
+      }
+
       if (this.isConnectedToServer) {
         items.push({
           text: this.$strings.ButtonGoToWebClient,
@@ -293,8 +301,21 @@ export default {
         this.clickRSSFeed()
       } else if (action === 'sendEbook') {
         this.showSendEbookDevicesModal = true
+      } else if (action === 'librarian') {
+        this.findInLibrarian()
       } else if (action === 'openWebClient') {
         this.$store.dispatch('user/openWebClient', `/item/${this.serverLibraryItemId}`)
+      }
+    },
+    async findInLibrarian() {
+      try {
+        await this.$librarian.findBook(this.title, this.mediaMetadata.authorName || this.mediaMetadata.authors?.[0]?.name)
+      } catch (error) {
+        if (error.offline) {
+          this.$toast.error('Librarian isn’t running. Open Librarian from the menu to start it.')
+        } else {
+          this.$toast.error(error.message)
+        }
       }
     },
     async toggleFinished() {

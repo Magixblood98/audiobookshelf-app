@@ -11,6 +11,7 @@
     <modals-rssfeeds-rss-feed-modal />
     <app-side-drawer :key="currentLang" />
     <readers-reader />
+    <librarian-sheet-host />
   </div>
 </template>
 
