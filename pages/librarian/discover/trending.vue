@@ -36,7 +36,7 @@ export default {
     },
     async load() {
       try {
-        this.books = (await this.$librarian.get(`/api/discover/trending?period=${this.period}&limit=60`)).books
+        this.books = (await this.$librarian.disc(`/api/discover/trending?period=${this.period}&limit=60`)).books
       } catch (error) {
         if (!error.offline && !error.login) this.$toast.error(error.message)
       }

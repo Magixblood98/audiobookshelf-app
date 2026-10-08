@@ -181,6 +181,10 @@ class Librarian {
   get(path) {
     return this.api(path)
   }
+  /** Discover lists: the server falls back to saved lists, so don't wait as long as for other requests */
+  disc(path) {
+    return this.api(path, { timeout: 60000 })
+  }
   post(path, body) {
     return this.api(path, { method: 'POST', body })
   }

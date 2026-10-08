@@ -140,33 +140,33 @@ export default {
     },
     async loadGenres() {
       try {
-        this.genres = (await this.$librarian.get('/api/discover/genres')).genres
+        this.genres = (await this.$librarian.disc('/api/discover/genres')).genres
       } catch {
         // the page frame shows connection problems
       }
     },
     async loadForYou() {
-      const d = await this.$librarian.get('/api/discover/foryou?' + this.query)
+      const d = await this.$librarian.disc('/api/discover/foryou?' + this.query)
       return { books: d.books, sub: d.because.length ? 'Today: ' + joinList(d.because) : '' }
     },
     async loadNewIn() {
-      const d = await this.$librarian.get('/api/discover/newin?' + this.query)
+      const d = await this.$librarian.disc('/api/discover/newin?' + this.query)
       return { books: d.books, title: 'New in ' + d.name.toLowerCase(), href: `/librarian/discover/genre/${d.slug}?mode=new`, sub: 'Popular from the last couple of years' }
     },
     async loadTrending() {
-      const d = await this.$librarian.get('/api/discover/trending?period=weekly&limit=20')
+      const d = await this.$librarian.disc('/api/discover/trending?period=weekly&limit=20')
       return { books: d.books, sub: 'Most read on Open Library over the last seven days' }
     },
     async loadSpotlight() {
-      const d = await this.$librarian.get('/api/discover/spotlight?' + this.query)
+      const d = await this.$librarian.disc('/api/discover/spotlight?' + this.query)
       return { books: d.books, title: 'Try something different: ' + d.name.toLowerCase(), href: '/librarian/discover/genre/' + d.slug, sub: 'Outside your usual shelves, a new genre each day' }
     },
     async loadGems() {
-      const d = await this.$librarian.get('/api/discover/gems?' + this.query)
+      const d = await this.$librarian.disc('/api/discover/gems?' + this.query)
       return { books: d.books, sub: d.because.length ? 'Lesser-known books in ' + joinList(d.because) : '' }
     },
     async loadFollowed() {
-      const d = await this.$librarian.get('/api/discover/followed?' + this.query)
+      const d = await this.$librarian.disc('/api/discover/followed?' + this.query)
       return { books: d.books.map((b) => ({ ...b, book_id: b.id })), sub: 'Books you haven’t wanted yet' }
     }
   },

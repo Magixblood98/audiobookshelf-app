@@ -7,7 +7,10 @@
       </div>
       <nuxt-link v-if="shownHref" :to="shownHref" class="lib-btn quiet small">See all</nuxt-link>
     </div>
-    <p v-if="error" class="px-4 text-xs text-error">{{ error }}</p>
+    <div v-if="error" class="mx-4 p-3 rounded-xl bg-bg-hover/40 flex items-center gap-3">
+      <p class="text-xs text-fg-muted flex-grow">Couldn’t load this shelf. {{ error }}</p>
+      <button type="button" class="lib-btn small" @click="fetch">Try again</button>
+    </div>
     <div v-else class="lib-hscroll">
       <template v-if="!books">
         <div v-for="i in 4" :key="i" class="flex-none" style="width: 108px"><div class="lib-cover fill bg-bg-hover" /></div>
@@ -42,20 +45,25 @@ export default {
   methods: {
     onHidden(olw) {
       this.hidden.push(olw)
+    },
+    async fetch() {
+      this.error = ''
+      this.books = null
+      try {
+        const r = await this.load()
+        if (!r || !r.books.length) return (this.gone = true)
+        this.books = r.books
+        this.sub = r.sub || ''
+        this.loadedTitle = r.title || ''
+        this.loadedHref = r.href || ''
+      } catch (error) {
+        this.error = error.message
+      }
     }
   },
-  async mounted() {
+  mounted() {
     this.$eventBus.$on('librarian-hidden', this.onHidden)
-    try {
-      const r = await this.load()
-      if (!r || !r.books.length) return (this.gone = true)
-      this.books = r.books
-      this.sub = r.sub || ''
-      this.loadedTitle = r.title || ''
-      this.loadedHref = r.href || ''
-    } catch (error) {
-      this.error = error.message
-    }
+    this.fetch()
   },
   beforeDestroy() {
     this.$eventBus.$off('librarian-hidden', this.onHidden)

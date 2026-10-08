@@ -40,7 +40,7 @@ export default {
         // first visit today
       }
       try {
-        const d = await this.$librarian.get(`/api/discover/${this.gems ? 'gems' : 'foryou'}?spin=${spin}&limit=60`)
+        const d = await this.$librarian.disc(`/api/discover/${this.gems ? 'gems' : 'foryou'}?spin=${spin}&limit=60`)
         this.books = d.books
         this.because = d.because || []
       } catch (error) {

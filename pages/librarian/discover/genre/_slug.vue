@@ -35,7 +35,7 @@ export default {
       this.loading = true
       try {
         const offset = this.books ? this.books.length : 0
-        const d = await this.$librarian.get(`/api/discover/genre/${encodeURIComponent(this.$route.params.slug)}?mode=${this.mode}&offset=${offset}`)
+        const d = await this.$librarian.disc(`/api/discover/genre/${encodeURIComponent(this.$route.params.slug)}?mode=${this.mode}&offset=${offset}`)
         this.name = d.name
         this.books = [...(this.books || []), ...d.books]
         this.more = d.books.length >= 40
