@@ -135,6 +135,21 @@ export default {
         }
       }
 
+      if (!this.isPodcast && this.title && !this.episode) {
+        items.push(
+          {
+            text: 'Play next',
+            value: 'queueNext',
+            icon: 'playlist_play'
+          },
+          {
+            text: this.queuedPosition ? `In Up Next (#${this.queuedPosition})` : 'Add to Up Next',
+            value: this.queuedPosition ? 'unqueue' : 'queue',
+            icon: this.queuedPosition ? 'playlist_remove' : 'queue_music'
+          }
+        )
+      }
+
       if (!this.isPodcast && this.title) {
         items.push({
           text: 'Find in Librarian',
@@ -217,6 +232,13 @@ export default {
     },
     mediaMetadata() {
       return this.media.metadata || {}
+    },
+    queueId() {
+      return this.libraryItem ? (String(this.libraryItem.id).startsWith('local') ? this.libraryItem.libraryItemId || this.libraryItem.id : this.libraryItem.id) : null
+    },
+    queuedPosition() {
+      const i = this.$store.state.listening.queue.findIndex((e) => e.id === this.queueId)
+      return i < 0 ? 0 : i + 1
     },
     title() {
       return this.mediaMetadata.title
@@ -301,11 +323,21 @@ export default {
         this.clickRSSFeed()
       } else if (action === 'sendEbook') {
         this.showSendEbookDevicesModal = true
+      } else if (action === 'queueNext' || action === 'queue') {
+        this.addToQueue(action === 'queueNext')
+      } else if (action === 'unqueue') {
+        this.$listening.removeFromQueue(this.queueId).then(() => this.$toast.info('Removed from Up Next'))
       } else if (action === 'librarian') {
         this.findInLibrarian()
       } else if (action === 'openWebClient') {
         this.$store.dispatch('user/openWebClient', `/item/${this.serverLibraryItemId}`)
       }
+    },
+    async addToQueue(next) {
+      // A downloaded copy plays offline, so queue that when this menu was opened from it
+      const item = this.isLocal && this.localLibraryItem ? this.localLibraryItem : this.libraryItem
+      const entry = await this.$listening.enqueue(item, { next })
+      this.$toast.success(next ? `${entry.title} plays next` : `Added ${entry.title} to Up Next`)
     },
     async findInLibrarian() {
       const author = this.mediaMetadata.authorName || this.mediaMetadata.authors?.[0]?.name

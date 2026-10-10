@@ -90,6 +90,11 @@ export default {
         }
       ]
       items.push({
+        icon: 'queue_music',
+        text: this.$store.state.listening.queue.length ? `Up next (${this.$store.state.listening.queue.length})` : 'Up next',
+        to: '/up-next'
+      })
+      items.push({
         icon: 'local_library',
         text: 'Librarian',
         to: '/librarian'

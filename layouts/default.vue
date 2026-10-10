@@ -12,6 +12,7 @@
     <app-side-drawer :key="currentLang" />
     <readers-reader />
     <librarian-sheet-host />
+    <listening-controller />
   </div>
 </template>
 

@@ -34,6 +34,7 @@
             <widgets-abridged-indicator v-if="isAbridged" />
           </div>
           <p v-if="subtitle" class="text-fg text-base">{{ subtitle }}</p>
+          <listening-star-rating v-if="!isPodcast && ratingId" :library-item-id="ratingId" class="mt-1.5" />
         </div>
 
         <div v-if="hasLocal" class="mx-1">
@@ -241,6 +242,11 @@ export default {
     hasLocal() {
       // Server library item has matching local library item
       return this.isLocal || this.libraryItem.localLibraryItem
+    },
+    ratingId() {
+      // Rate the server book, so the rating follows it whether you open the download or the stream
+      if (this.isLocal) return this.libraryItem.libraryItemId || this.libraryItem.id
+      return this.libraryItem.id
     },
     localLibraryItem() {
       if (this.isLocal) return this.libraryItem

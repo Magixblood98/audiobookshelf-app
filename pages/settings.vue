@@ -159,6 +159,27 @@
       </div>
     </div>
 
+    <!-- Listening extras (this fork) -->
+    <p class="uppercase text-xs font-semibold text-fg-muted mb-2 mt-10">Listening</p>
+    <div class="flex items-center py-3" @click="toggleListening('perBookSpeed')">
+      <div class="w-10 flex justify-center pointer-events-none"><ui-toggle-switch :value="listening.perBookSpeed" /></div>
+      <p class="pl-4">Remember playback speed for each book</p>
+    </div>
+    <div class="flex items-center py-3" @click="toggleListening('continueSeries')">
+      <div class="w-10 flex justify-center pointer-events-none"><ui-toggle-switch :value="listening.continueSeries" /></div>
+      <p class="pl-4">When a book ends, play the next in its series</p>
+    </div>
+    <div class="flex items-center py-3" @click="toggleListening('deleteFinished')">
+      <div class="w-10 flex justify-center pointer-events-none"><ui-toggle-switch :value="listening.deleteFinished" /></div>
+      <p class="pl-4">Remove a book’s download when you finish it</p>
+    </div>
+    <div class="py-3 flex items-center">
+      <p class="pr-4 w-36">Open the app on</p>
+      <select :value="listening.startPage" class="bg-bg border border-border rounded px-2 py-1.5 text-sm" style="max-width: 200px" @change="setStartPage($event.target.value)">
+        <option v-for="p in startPages" :key="p[0]" :value="p[0]">{{ p[1] }}</option>
+      </select>
+    </div>
+
     <!-- Android Auto settings -->
     <template v-if="!isiOS">
       <p class="uppercase text-xs font-semibold text-fg-muted mb-2 mt-10">{{ $strings.HeaderAndroidAutoSettings }}</p>
@@ -188,6 +209,7 @@
 <script>
 import { Dialog } from '@capacitor/dialog'
 import jumpLabelMixin from '@/mixins/jumpLabel'
+import { START_PAGES } from '@/plugins/listening'
 
 export default {
   mixins: [jumpLabelMixin],
@@ -342,6 +364,12 @@ export default {
     }
   },
   computed: {
+    listening() {
+      return this.$store.state.listening.settings
+    },
+    startPages() {
+      return START_PAGES
+    },
     // This is flipped because alt view was the default until v0.9.61-beta
     enableBookshelfView: {
       get() {
@@ -671,6 +699,12 @@ export default {
 
       this.settings.androidAutoBrowseLimitForGrouping = deviceSettings.androidAutoBrowseLimitForGrouping
       this.settings.androidAutoBrowseSeriesSequenceOrder = deviceSettings.androidAutoBrowseSeriesSequenceOrder || 'ASC'
+    },
+    toggleListening(key) {
+      this.$listening.updateSettings({ [key]: !this.listening[key] })
+    },
+    setStartPage(page) {
+      this.$listening.updateSettings({ startPage: page })
     },
     async init() {
       this.loading = true
