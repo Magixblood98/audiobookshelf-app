@@ -37,7 +37,13 @@
           </button>
           <p class="text-xs text-fg-muted mt-3">Or open Termux and run <code class="px-1.5 py-0.5 rounded bg-bg-hover">pl start</code></p>
         </template>
-        <p v-else class="text-fg-muted mt-2">The app couldn’t reach {{ config.url }}. Check that it’s running and that Tailscale is connected.</p>
+        <template v-else-if="tailscale.installed && !tailscale.connected">
+          <p class="text-fg-muted mt-2">It runs on your Pi, which the app reaches through Tailscale. Tailscale is off.</p>
+          <button type="button" class="lib-btn primary mt-6 w-56" :disabled="tailscale.busy" @click="turnOnTailscale">
+            <span class="material-symbols">vpn_lock</span>{{ tailscale.busy ? 'Connecting…' : 'Turn on Tailscale' }}
+          </button>
+        </template>
+        <p v-else class="text-fg-muted mt-2">The app couldn’t reach {{ config.url }}. Check that it’s running on the Pi.</p>
         <div class="mt-4 flex justify-center gap-2">
           <button type="button" class="lib-btn small" @click="retry(true)">Try again</button>
           <nuxt-link to="/librarian/settings/connection" class="lib-btn small quiet">Connection settings</nuxt-link>
@@ -98,9 +104,13 @@ export default {
     starting() {
       return this.$store.state.librarian.starting
     },
+    tailscale() {
+      return this.$store.state.tailscale
+    },
     power() {
       if (this.starting) return { label: 'Starting', color: 'var(--lib-want)' }
-      if (this.online === false) return { label: 'Off', color: 'rgb(var(--color-fg-muted))' }
+      if (this.online === false) return { label: this.$librarian.isLocal ? 'Off' : 'Not connected', color: 'rgb(var(--color-fg-muted))' }
+      if (!this.$librarian.isLocal) return { label: 'On', color: '#4CAF50' }
       const p = this.$store.state.librarian.status?.power
       if (!p) return { label: 'On', color: '#4CAF50' }
       if (p.busy.length) return { label: p.wake_lock ? 'Working' : 'On', color: '#4CAF50' }
@@ -126,6 +136,15 @@ export default {
       } else if (manual) {
         this.$toast.error('Still not answering.')
       }
+    },
+    async turnOnTailscale() {
+      const ok = await this.$tailscale.turnOn()
+      if (!ok) return this.$toast.error('Tailscale didn’t connect. Open the Tailscale app to check it’s signed in.')
+      this.$toast.info('Tailscale is on')
+      this.retry(true)
+    },
+    onTailscaleConnected() {
+      if (this.online === false) this.retry(false)
     },
     /** Start it without asking when it's on this phone and auto-start is on (once per visit) */
     autoStart() {
@@ -154,6 +173,8 @@ export default {
     }
   },
   mounted() {
+    this.$eventBus.$on('tailscale-connected', this.onTailscaleConnected)
+    if (!this.$librarian.isLocal) this.$tailscale.refresh()
     this.$librarian.loadStatus().catch(() => {})
     this.statusTimer = setInterval(() => {
       if (!document.hidden && this.online !== false) this.$librarian.loadStatus().catch(() => {})
@@ -164,6 +185,7 @@ export default {
     }
   },
   beforeDestroy() {
+    this.$eventBus.$off('tailscale-connected', this.onTailscaleConnected)
     clearInterval(this.statusTimer)
     clearInterval(this.gateTimer)
   }

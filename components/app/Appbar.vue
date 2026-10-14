@@ -22,6 +22,8 @@
 
       <widgets-librarian-indicator />
 
+      <widgets-tailscale-toggle />
+
       <!-- Must be connected to a server to cast, only supports media items on server -->
       <button type="button" aria-label="Cast" v-show="isCastAvailable && user" class="mx-2 cursor-pointer flex items-center" @click="castClick">
         <span class="material-symbols text-2xl leading-none">

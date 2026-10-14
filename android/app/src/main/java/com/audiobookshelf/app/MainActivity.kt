@@ -25,6 +25,7 @@ import com.audiobookshelf.app.plugins.AbsDownloader
 import com.audiobookshelf.app.plugins.AbsFileSystem
 import com.audiobookshelf.app.plugins.AbsLogger
 import com.audiobookshelf.app.plugins.TermuxRunner
+import com.audiobookshelf.app.plugins.TailscaleControl
 import com.getcapacitor.BridgeActivity
 
 
@@ -51,6 +52,7 @@ class MainActivity : BridgeActivity() {
     registerPlugin(AbsDatabase::class.java)
     registerPlugin(AbsLogger::class.java)
     registerPlugin(TermuxRunner::class.java)
+    registerPlugin(TailscaleControl::class.java)
 
     super.onCreate(savedInstanceState)
     Log.d(tag, "onCreate")

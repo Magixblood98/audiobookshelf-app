@@ -5,8 +5,9 @@ import { AbsFileSystem } from './AbsFileSystem'
 import { AbsDatabase } from './AbsDatabase'
 import { AbsLogger } from './AbsLogger'
 import { TermuxRunner } from './TermuxRunner'
+import { TailscaleControl } from './TailscaleControl'
 import { Capacitor } from '@capacitor/core'
 
 Vue.prototype.$platform = Capacitor.getPlatform()
 
-export { AbsAudioPlayer, AbsDownloader, AbsFileSystem, AbsLogger, AbsDatabase, TermuxRunner }
+export { AbsAudioPlayer, AbsDownloader, AbsFileSystem, AbsLogger, AbsDatabase, TermuxRunner, TailscaleControl }

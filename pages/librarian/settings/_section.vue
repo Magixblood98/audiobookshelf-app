@@ -19,6 +19,28 @@
     </template>
 
     <!-- Server & battery: works while the server is off so it can be started -->
+    <!-- Server on another machine (the Pi): it's always on there, so only Tailscale matters here -->
+    <template v-else-if="id === 'server' && !$librarian.isLocal">
+      <div class="mx-4 mt-4 p-4 rounded-2xl bg-bg-hover/40">
+        <div class="flex items-center gap-3">
+          <span class="w-3 h-3 rounded-full flex-none" :style="{ background: serverOn ? '#4CAF50' : 'rgb(var(--color-fg-muted))' }" />
+          <div class="flex-grow min-w-0">
+            <p class="lib-serif text-lg font-semibold">{{ serverOn ? 'Pocket Librarian is running' : 'Can’t reach Pocket Librarian' }}</p>
+            <p class="text-sm text-fg-muted break-all">On {{ conn.url }}. It runs all the time there, so it uses none of this phone’s battery.</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-4 px-5 pt-5">
+        <span class="material-symbols text-2xl" :style="{ color: tailscale.connected ? '#4CAF50' : null }">{{ tailscale.connected ? 'vpn_lock' : 'vpn_key_off' }}</span>
+        <span class="flex-grow">
+          <span class="block">Tailscale is {{ tailscale.busy ? 'switching…' : tailscale.connected ? 'on' : 'off' }}</span>
+          <span class="block text-xs text-fg-muted mt-1 leading-snug">The app reaches your Pi through Tailscale. Turn it off when you’re done to save battery. The button in the top bar does the same.</span>
+        </span>
+        <button type="button" class="lib-btn small" :class="tailscale.connected ? '' : 'primary'" :disabled="tailscale.busy || !tailscale.installed" @click="toggleTailscale">{{ tailscale.connected ? 'Turn off' : 'Turn on' }}</button>
+      </div>
+      <p v-if="!tailscale.installed" class="text-xs text-error px-5 pt-2">The Tailscale app isn’t installed on this phone.</p>
+    </template>
+
     <template v-else-if="id === 'server'">
       <div class="mx-4 mt-4 p-4 rounded-2xl bg-bg-hover/40">
         <div class="flex items-center gap-3">
@@ -274,8 +296,11 @@ export default {
       parts.push(p.wake_lock ? 'Keeping the phone awake while it works.' : 'Not keeping the phone awake.')
       return parts.join(' ')
     },
+    tailscale() {
+      return this.$store.state.tailscale
+    },
     hasSave() {
-      if (this.id === 'server') return !!this.cfg
+      if (this.id === 'server') return !!this.cfg && this.$librarian.isLocal
       return this.cfg && ['downloads', 'notifications', 'security'].includes(this.id) ? true : !!(this.cfg && this.section && this.section.fields)
     },
     absAddress() {
@@ -312,6 +337,7 @@ export default {
     async load() {
       if (this.id === 'connection') return
       if (this.id === 'server') {
+        this.$tailscale.refresh()
         try {
           // A plain status check counts as activity here, which is fine: you're looking at the server
           await this.$librarian.loadStatus()
@@ -473,6 +499,16 @@ export default {
         }
       } finally {
         this.busy = false
+      }
+    },
+    async toggleTailscale() {
+      const on = !this.tailscale.connected
+      const ok = await this.$tailscale.toggle()
+      if (!ok) return this.$toast.error(on ? 'Tailscale didn’t connect. Open the Tailscale app to check it’s signed in.' : 'Tailscale didn’t turn off.')
+      if (on) {
+        this.$eventBus.$emit('tailscale-connected')
+        await this.$librarian.ping()
+        this.load()
       }
     },
     async refreshPower() {

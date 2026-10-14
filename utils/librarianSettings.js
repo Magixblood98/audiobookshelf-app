@@ -76,7 +76,8 @@ export const SECTIONS = [
   {
     id: 'server',
     title: 'Server & battery',
-    sum: (c) => {
+    sum: (c, app) => {
+      if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(app.url || '')) return `Runs on ${(app.url || '').replace(/^https?:\/\//, '')}, reached through Tailscale`
       const idle = +c.server.idle_minutes
       const wake = +c.server.wake_hours
       return `${idle ? `Turns off after ${idle} min idle` : 'Always on'}, ${wake ? `wakes every ${wake} h` : 'no scheduled wake-ups'}`
