@@ -8,7 +8,13 @@
 /** App-bar button that turns Tailscale on or off, so the Pi can be reached only while it's needed */
 export default {
   data() {
-    return { timer: null }
+    return { timer: null, toggling: false }
+  },
+  watch: {
+    // Switched on in the Tailscale app or its notification: sync too
+    connected(now, before) {
+      if (now && !before && !this.toggling) this.$eventBus.$emit('tailscale-connected')
+    }
   },
   computed: {
     installed() {
@@ -25,7 +31,8 @@ export default {
     async toggle() {
       await this.$hapticsImpact()
       const turningOn = !this.connected
-      const ok = await this.$tailscale.toggle()
+      this.toggling = true
+      const ok = await this.$tailscale.toggle().finally(() => (this.toggling = false))
       if (!ok) {
         this.$toast.error(turningOn ? 'Tailscale didn’t connect. Open the Tailscale app to check it’s signed in.' : 'Tailscale didn’t turn off. Try again from the Tailscale app.')
         return

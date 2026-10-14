@@ -237,6 +237,13 @@ export default {
         return
       }
 
+      // A download plays from the position saved on the phone. If the server has a newer one (listened elsewhere
+      // while this phone was offline), take it first.
+      if (isLocal && !episodeId && (startTime === undefined || startTime === null)) {
+        const pulled = await this.$progressSync.beforeLocalPlay(libraryItemId)
+        if (pulled) this.$toast.info(`Picking up where you left off elsewhere: ${this.$secondsToTimestamp(pulled.server.currentTime)}`)
+      }
+
       this.serverLibraryItemId = null
       this.serverEpisodeId = null
 

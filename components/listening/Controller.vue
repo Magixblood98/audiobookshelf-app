@@ -20,7 +20,10 @@ export default {
       session: null,
       endedSessionId: null,
       ignoreSpeedUntil: 0,
-      listeners: []
+      listeners: [],
+      playing: false,
+      tickTimer: null,
+      lastTick: 0
     }
   },
   computed: {
@@ -39,6 +42,7 @@ export default {
     async onSession(session) {
       this.session = session
       this.endedSessionId = null
+      if (session.mediaType === 'book') this.$listening.logSession(session, session.currentTime || 0)
       const key = this.keyOf(session)
       // The player may report the previous book's speed while it loads; don't save that for this book
       this.ignoreSpeedUntil = Date.now() + 2500
@@ -58,13 +62,74 @@ export default {
       this.$listening.setSpeed(key, speed)
     },
     onMetadata(data) {
+      if (this.session && data && typeof data.currentTime === 'number' && this.session.mediaType === 'book') {
+        this.$listening.logProgress(this.session.id, data.currentTime, { save: data.playerState === 'ENDED' })
+      }
       if (data?.playerState !== 'ENDED' || !this.session) return
       if (this.endedSessionId === this.session.id) return
       this.endedSessionId = this.session.id
       this.onBookEnded(this.session)
     },
     onPlaybackClosed() {
+      this.tick(true)
+      this.stopTicking()
       this.session = null
+    },
+    /* ----- Progress sync when the server becomes reachable ----- */
+    async onTailscaleConnected() {
+      await new Promise((r) => setTimeout(r, 2000)) // let the connection settle
+      const { pushed, pulled } = await this.$progressSync.syncNow()
+      if (pulled.length) {
+        const names = pulled.map((p) => this.titleFor(p.local)).join(', ')
+        this.$toast.info(`Brought ${pulled.length === 1 ? 'a download' : pulled.length + ' downloads'} up to date with newer progress from the server: ${names}`, { timeout: 8000 })
+      } else if (pushed?.ok) {
+        this.$toast.info('Progress synced')
+      }
+    },
+    titleFor(local) {
+      const e = this.$store.state.listening.log.find((x) => x.itemId === local.libraryItemId)
+      return e?.title || 'a book'
+    },
+    /* ----- Listening log ----- */
+    onPlayingUpdate(data) {
+      const playing = !!data?.value
+      if (playing === this.playing) return
+      this.playing = playing
+      if (playing) {
+        this.lastTick = Date.now()
+        this.stopTicking()
+        this.tickTimer = setInterval(() => this.tick(false), 15000)
+      } else {
+        this.tick(true)
+        this.stopTicking()
+      }
+    },
+    stopTicking() {
+      clearInterval(this.tickTimer)
+      this.tickTimer = null
+    },
+    /** Record where playback is now and how long has been listened since the last tick */
+    async tick(save) {
+      const session = this.session
+      if (!session || session.mediaType !== 'book') return
+      const now = Date.now()
+      const listened = this.playing || save ? Math.min(60, Math.max(0, (now - this.lastTick) / 1000)) : 0
+      this.lastTick = now
+      try {
+        const { value } = await AbsAudioPlayer.getCurrentTime()
+        if (typeof value === 'number' && value > 0) await this.$listening.logProgress(session.id, value, { listenedDelta: listened, save })
+      } catch (error) {
+        console.error('[Listening] Couldn’t read the position', error)
+      }
+    },
+    onSyncFailing() {
+      if (this.session) this.$listening.logProgress(this.session.id, this.lastPosition(), { sync: false, save: true })
+    },
+    onSyncSuccess() {
+      if (this.session) this.$listening.logProgress(this.session.id, this.lastPosition(), { sync: true })
+    },
+    lastPosition() {
+      return (this.$store.state.listening.log.find((e) => e.id === this.session?.id) || {}).endPos || 0
     },
     async onBookEnded(session) {
       if (session.mediaType !== 'book') return
@@ -125,14 +190,20 @@ export default {
     }
   },
   async mounted() {
+    this.$eventBus.$on('tailscale-connected', this.onTailscaleConnected)
     this.listeners = await Promise.all([
       AbsAudioPlayer.addListener('onPlaybackSession', this.onSession),
       AbsAudioPlayer.addListener('onPlaybackSpeedChanged', this.onSpeedChanged),
       AbsAudioPlayer.addListener('onMetadata', this.onMetadata),
-      AbsAudioPlayer.addListener('onPlaybackClosed', this.onPlaybackClosed)
+      AbsAudioPlayer.addListener('onPlaybackClosed', this.onPlaybackClosed),
+      AbsAudioPlayer.addListener('onPlayingUpdate', this.onPlayingUpdate),
+      AbsAudioPlayer.addListener('onProgressSyncFailing', this.onSyncFailing),
+      AbsAudioPlayer.addListener('onProgressSyncSuccess', this.onSyncSuccess)
     ])
   },
   beforeDestroy() {
+    this.$eventBus.$off('tailscale-connected', this.onTailscaleConnected)
+    this.stopTicking()
     this.listeners.forEach((l) => l && l.remove && l.remove())
   }
 }

@@ -5,7 +5,8 @@ import { Preferences } from '@capacitor/preferences'
  * related settings. components/listening/Controller.vue reacts to the player using these.
  */
 
-const KEYS = { queue: 'upNextQueue', speeds: 'bookSpeeds', ratings: 'bookRatings', settings: 'listeningSettings' }
+const KEYS = { queue: 'upNextQueue', speeds: 'bookSpeeds', ratings: 'bookRatings', settings: 'listeningSettings', log: 'listenLog' }
+const LOG_LIMIT = 400
 export const DEFAULT_SETTINGS = { continueSeries: true, perBookSpeed: true, deleteFinished: false, startPage: '/bookshelf' }
 export const START_PAGES = [
   ['/bookshelf', 'Home'],
@@ -55,8 +56,8 @@ class Listening {
   }
 
   async load() {
-    const [queue, speeds, ratings, settings] = await Promise.all([this.read(KEYS.queue, []), this.read(KEYS.speeds, {}), this.read(KEYS.ratings, {}), this.read(KEYS.settings, {})])
-    this.store.commit('listening/setAll', { queue, speeds, ratings, settings: { ...DEFAULT_SETTINGS, ...settings } })
+    const [queue, speeds, ratings, settings, log] = await Promise.all([this.read(KEYS.queue, []), this.read(KEYS.speeds, {}), this.read(KEYS.ratings, {}), this.read(KEYS.settings, {}), this.read(KEYS.log, [])])
+    this.store.commit('listening/setAll', { queue, speeds, ratings, log, settings: { ...DEFAULT_SETTINGS, ...settings } })
   }
 
   /* ---------- Up Next queue ---------- */
@@ -116,14 +117,15 @@ class Listening {
   }
 
   /** Play a queued book, from its download when there is one */
-  async playEntry(entry) {
+  async playEntry(entry, { startTime } = {}) {
     let local = null
     if (entry.localId) local = { id: entry.localId }
     else if (entry.id && !entry.id.startsWith('local')) local = await this.db.getLocalLibraryItemByLId(entry.id).catch(() => null)
+    const extra = startTime != null ? { startTime } : {}
     if (local?.id) {
-      this.eventBus.$emit('play-item', { libraryItemId: local.id, serverLibraryItemId: entry.id && !entry.id.startsWith('local') ? entry.id : null })
+      this.eventBus.$emit('play-item', { libraryItemId: local.id, serverLibraryItemId: entry.id && !entry.id.startsWith('local') ? entry.id : null, ...extra })
     } else {
-      this.eventBus.$emit('play-item', { libraryItemId: entry.id })
+      this.eventBus.$emit('play-item', { libraryItemId: entry.id, ...extra })
     }
   }
 
@@ -153,6 +155,59 @@ class Listening {
     else delete ratings[id]
     this.store.commit('listening/setRatings', ratings)
     await this.write(KEYS.ratings, ratings)
+  }
+
+  /* ---------- Listening log (this phone's sessions, recorded even while offline) ---------- */
+
+  /** Start or resume the entry for a playback session */
+  async logSession(session, position) {
+    await this.loaded
+    const log = [...this.state.log]
+    const i = log.findIndex((e) => e.id === session.id)
+    const now = Date.now()
+    if (i >= 0) {
+      log[i] = { ...log[i], lastAt: now }
+    } else {
+      log.unshift({
+        id: session.id,
+        itemId: session.libraryItemId || null,
+        localId: session.localLibraryItem?.id || null,
+        title: session.displayTitle || session.mediaMetadata?.title || 'Untitled',
+        author: session.displayAuthor || '',
+        method: session.playMethod === 3 ? 'download' : 'stream',
+        startedAt: now,
+        lastAt: now,
+        startPos: position,
+        endPos: position,
+        listened: 0,
+        sync: null
+      })
+      if (log.length > LOG_LIMIT) log.length = LOG_LIMIT
+    }
+    this.store.commit('listening/setLog', log)
+    await this.write(KEYS.log, log)
+  }
+
+  /** Update an entry's position; `listenedDelta` is seconds of real listening since the last update */
+  async logProgress(sessionId, position, { listenedDelta = 0, sync, save = false } = {}) {
+    const log = this.state.log
+    const i = log.findIndex((e) => e.id === sessionId)
+    if (i < 0) return
+    const e = { ...log[i], endPos: position, lastAt: Date.now(), listened: (log[i].listened || 0) + listenedDelta }
+    if (sync !== undefined) e.sync = sync
+    const next = [...log]
+    next[i] = e
+    this.store.commit('listening/setLog', next)
+    // Writing on every tick wears flash and battery; save on pauses, closes and every few updates
+    if (save || Date.now() - (this.lastLogWrite || 0) > 60000) {
+      this.lastLogWrite = Date.now()
+      await this.write(KEYS.log, next)
+    }
+  }
+
+  async clearLog() {
+    this.store.commit('listening/setLog', [])
+    await this.write(KEYS.log, [])
   }
 
   /* ---------- Settings ---------- */

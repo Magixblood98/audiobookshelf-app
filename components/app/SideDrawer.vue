@@ -95,6 +95,11 @@ export default {
         to: '/up-next'
       })
       items.push({
+        icon: 'history',
+        text: 'Listening log',
+        to: '/listening-log'
+      })
+      items.push({
         icon: 'local_library',
         text: 'Librarian',
         to: '/librarian'

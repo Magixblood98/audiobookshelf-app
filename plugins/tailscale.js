@@ -38,6 +38,8 @@ class Tailscale {
     if (this.state.busy) return false
     this.store.commit('tailscale/setBusy', true)
     try {
+      // e.g. upload this phone's listening progress while the server is still reachable
+      if (!on && this.beforeDisconnect) await Promise.race([this.beforeDisconnect(), new Promise((r) => setTimeout(r, 8000))])
       await (on ? TailscaleControl.connect() : TailscaleControl.disconnect())
       const ok = await this.waitFor(on)
       if (ok && on) await new Promise((r) => setTimeout(r, 1500)) // let the tunnel start carrying traffic

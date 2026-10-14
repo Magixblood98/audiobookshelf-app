@@ -3,6 +3,7 @@ export const state = () => ({
   queue: [],
   speeds: {},
   ratings: {},
+  log: [],
   settings: { continueSeries: true, perBookSpeed: true, deleteFinished: false, startPage: '/bookshelf' }
 })
 
@@ -18,6 +19,9 @@ export const mutations = {
   },
   setRatings(state, ratings) {
     state.ratings = ratings
+  },
+  setLog(state, log) {
+    state.log = log
   },
   setSettings(state, settings) {
     state.settings = settings
